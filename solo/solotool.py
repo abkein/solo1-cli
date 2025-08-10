@@ -32,21 +32,21 @@ from cryptography.hazmat.primitives import hashes
 from fido2.attestation import Attestation
 from fido2.client import ClientError, Fido2Client
 from fido2.ctap import CtapError
-from fido2.ctap1 import CTAP1, ApduError
-from fido2.ctap2 import CTAP2
+from fido2.ctap1 import Ctap1, ApduError
+from fido2.ctap2 import Ctap2
 from fido2.hid import CTAPHID, CtapHidDevice
 from intelhex import IntelHex
 
-import solo
-from solo import helpers
-
+from . import operations
+from .dfu import DFUDevice
+from . import client
+from .commands import SoloBootloader
 
 def get_firmware_object(sk_name, hex_file):
-    # move to helpers
-    return helpers.sign_firmware(sk_name, hex_file)
+    return operations.sign_firmware(sk_name, hex_file)
 
 
-def attempt_to_find_device(p):
+def attempt_to_find_device(p) -> bool:
     found = False
     for i in range(0, 5):
         try:
@@ -58,7 +58,7 @@ def attempt_to_find_device(p):
     return found
 
 
-def attempt_to_boot_bootloader(p):
+def attempt_to_boot_bootloader(p) -> None:
 
     try:
         p.enter_solo_bootloader()
@@ -105,9 +105,10 @@ def sign_main():
     pass
 
 
-def use_dfu(args):
+def use_dfu(args) -> None:
     fw = args.__dict__["[firmware]"]
 
+    dfu: DFUDevice | None = None
     for i in range(0, 8):
         dfu = DFUDevice()
         try:
@@ -246,7 +247,7 @@ def programmer_main():
     fw = args.__dict__["[firmware]"]
 
     try:
-        p = solo.client.find()
+        p = client.find()
         if args.use_dfu:
             print("entering dfu..")
             try:
@@ -320,7 +321,8 @@ def main_mergehex():
 
 
 def main_version():
-    print(solo.__version__)
+    #print(__version__)
+    pass
 
 
 def main_main():

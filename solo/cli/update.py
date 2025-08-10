@@ -19,8 +19,7 @@ import requests
 from fido2.ctap import CtapError
 from fido2.ctap1 import ApduError
 
-import solo
-from solo import helpers
+from .. import exceptions, client, helpers
 
 
 @click.command()
@@ -48,9 +47,9 @@ def update(serial, yes, local_firmware_server, alpha):
 
     # Determine target key
     try:
-        solo_client = solo.client.find(serial)
+        solo_client = client.find(serial)
 
-    except solo.exceptions.NoSoloFoundError:
+    except exceptions.NoSoloFoundError:
         print()
         print("No Solo key found!")
         print()
@@ -61,7 +60,7 @@ def update(serial, yes, local_firmware_server, alpha):
         print()
         sys.exit(1)
 
-    except solo.exceptions.NonUniqueDeviceError:
+    except exceptions.NonUniqueDeviceError:
         print()
         print("Multiple Solo keys are plugged in! Please:")
         # print("  * unplug all but one key, or")
@@ -185,7 +184,7 @@ def update(serial, yes, local_firmware_server, alpha):
             print("Switching into bootloader mode...")
             solo_client.enter_bootloader_or_die()
             time.sleep(1.5)
-            solo_client = solo.client.find(serial)
+            solo_client = client.find(serial)
 
         solo_client.set_reboot(False)
         sig = solo_client.program_file(firmware_file)

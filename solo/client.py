@@ -15,7 +15,7 @@ from . import exceptions, fido2
 from .devices import solo_v1
 
 
-def find(solo_serial=None, retries=5, raw_device=None, udp=False):
+def find(solo_serial: str | None = None, retries: int = 5, raw_device: CtapHidDevice | None = None, udp: bool = False) -> solo_v1.Client:
 
     if udp:
         fido2.force_udp_backend()
@@ -37,7 +37,7 @@ def find(solo_serial=None, retries=5, raw_device=None, udp=False):
     raise exceptions.NoSoloFoundError("no Solo found")
 
 
-def find_all():
+def find_all() -> list[solo_v1.Client]:
     hid_devices = list(CtapHidDevice.list_devices())
     solo_devices = [
         d

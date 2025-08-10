@@ -11,40 +11,42 @@ from numbers import Number
 from threading import Event, Timer
 
 
-def to_websafe(data):
+def to_websafe(data: str) -> str:
     data = data.replace("+", "-")
     data = data.replace("/", "_")
     data = data.replace("=", "")
     return data
 
 
-def from_websafe(data):
+def from_websafe(data: str) -> str:
     data = data.replace("-", "+")
     data = data.replace("_", "/")
     return data + "=="[: (3 * len(data)) % 4]
 
 
 class Timeout(object):
+    event: Event
+    timer: Timer | None
     """Utility class for adding a timeout to an event.
     :param time_or_event: A number, in seconds, or a threading.Event object.
     :ivar event: The Event associated with the Timeout.
     :ivar timer: The Timer associated with the Timeout, if any.
     """
 
-    def __init__(self, time_or_event):
-        if isinstance(time_or_event, Number):
+    def __init__(self, time_or_event: Event | float | int) -> None:
+        if isinstance(time_or_event, (float, int)):
             self.event = Event()
             self.timer = Timer(time_or_event, self.event.set)
         else:
             self.event = time_or_event
             self.timer = None
 
-    def __enter__(self):
+    def __enter__(self) -> Event:
         if self.timer:
             self.timer.start()
         return self.event
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if self.timer:
             self.timer.cancel()
             self.timer.join()

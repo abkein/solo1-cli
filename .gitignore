@@ -10,3 +10,5 @@ firmware-*.json
 
 *.pyc
 .tags*
+shell.nix
+shell1.nix

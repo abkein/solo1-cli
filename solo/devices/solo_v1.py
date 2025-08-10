@@ -5,11 +5,12 @@ import sys
 import tempfile
 import time
 from threading import Event
+from typing import Literal, Any
 
 from fido2.client import Fido2Client
 from fido2.ctap import CtapError
-from fido2.ctap1 import CTAP1
-from fido2.ctap2 import CTAP2
+from fido2.ctap1 import Ctap1
+from fido2.ctap2 import Ctap2
 from fido2.hid import CTAPHID, CtapHidDevice
 from intelhex import IntelHex
 
@@ -19,32 +20,28 @@ from .base import SoloClient
 
 
 class Client(SoloClient):
-    def __init__(
-        self,
-    ):
+    def __init__(self) -> None:
         SoloClient.__init__(self)
         self.exchange = self.exchange_hid
 
     @staticmethod
-    def format_request(cmd, addr=0, data=b"A" * 16):
+    def format_request(cmd: int, addr: int = 0, data: bytes | bytearray = b"A" * 16) -> bytes:
         # not sure why this is here?
         # arr = b"\x00" * 9
-        addr = struct.pack("<L", addr)
-        cmd = struct.pack("B", cmd)
+        _addr = struct.pack("<L", addr)
+        _cmd = struct.pack("B", cmd)
         length = struct.pack(">H", len(data))
 
-        return cmd + addr[:3] + SoloBootloader.TAG + length + data
+        return _cmd + _addr[:3] + SoloBootloader.TAG + length + data
 
-    def reboot(
-        self,
-    ):
+    def reboot(self) -> None:
         """option to reboot after programming"""
         try:
             self.exchange(SoloBootloader.reboot)
         except OSError:
             pass
 
-    def find_device(self, dev=None, solo_serial=None):
+    def find_device(self, dev: CtapHidDevice | None = None, solo_serial: str | None = None) -> CtapHidDevice:
         if dev is None:
             devices = list(CtapHidDevice.list_devices())
             if solo_serial is not None:
@@ -64,9 +61,9 @@ class Client(SoloClient):
             dev = devices[0]
         self.dev = dev
 
-        self.ctap1 = CTAP1(dev)
+        self.ctap1 = Ctap1(dev)
         try:
-            self.ctap2 = CTAP2(dev)
+            self.ctap2 = Ctap2(dev)
         except CtapError:
             self.ctap2 = None
 
@@ -81,28 +78,20 @@ class Client(SoloClient):
 
         return self.dev
 
-    def get_current_hid_device(
-        self,
-    ):
+    def get_current_hid_device(self) -> CtapHidDevice:
         return self.dev
 
-    def get_current_fido_client(
-        self,
-    ):
+    def get_current_fido_client(self) -> Fido2Client | None:
         return self.client
 
-    def use_u2f(
-        self,
-    ):
+    def use_u2f(self) -> None:
         self.exchange = self.exchange_u2f
 
-    def use_hid(
-        self,
-    ):
+    def use_hid(self) -> None:
         self.exchange = self.exchange_hid
 
-    def send_only_hid(self, cmd, data):
-        if not isinstance(data, bytes):
+    def send_only_hid(self, cmd: int, data: bytes | str) -> None:
+        if isinstance(data, str):
             data = struct.pack("%dB" % len(data), *[ord(x) for x in data])
 
         no_reply = Event()
@@ -112,7 +101,7 @@ class Client(SoloClient):
         except IOError:
             pass
 
-    def exchange_hid(self, cmd, addr=0, data=b"A" * 16):
+    def exchange_hid(self, cmd: int, addr: int = 0, data: bytes | bytearray = b"A" * 16) -> bytes:
         req = Client.format_request(cmd, addr, data)
 
         data = self.send_data_hid(SoloBootloader.CommandBoot, req)
@@ -123,7 +112,7 @@ class Client(SoloClient):
 
         return data[1:]
 
-    def exchange_u2f(self, cmd, addr=0, data=b"A" * 16):
+    def exchange_u2f(self, cmd: int, addr: int = 0, data: bytes | bytearray = b"A" * 16) -> bytes:
         appid = b"A" * 32
         chal = b"B" * 32
 
@@ -137,12 +126,12 @@ class Client(SoloClient):
 
         return res.signature[1:]
 
-    def exchange_fido2(self, cmd, addr=0, data=b"A" * 16):
+    def exchange_fido2(self, cmd: int, addr: int = 0, data: bytes | bytearray = b"A" * 16) -> bytes:
         chal = b"B" * 32
 
         req = Client.format_request(cmd, addr, data)
 
-        assertion = self.ctap2.get_assertion(
+        assertion = self.ctap2.get_assertion(  # type: ignore
             self.host, chal, [{"id": req, "type": "public-key"}]
         )
 
@@ -153,31 +142,27 @@ class Client(SoloClient):
 
         return res.signature[1:]
 
-    def bootloader_version(
-        self,
-    ):
-        data = self.exchange(SoloBootloader.version)
+    def bootloader_version(self) -> tuple[int, int, int] | tuple[Literal[0], Literal[0], int]:
+        data: bytes = self.exchange(SoloBootloader.version)
         if len(data) > 2:
             return (data[0], data[1], data[2])
         return (0, 0, data[0])
 
-    def solo_version(
-        self,
-    ):
+    def solo_version(self) -> bytes | tuple[int, int, int]:
         try:
             return self.send_data_hid(0x61, b"")
         except CtapError:
-            data = self.exchange(SoloExtension.version)
+            data: bytes = self.exchange(SoloExtension.version)
             return (data[0], data[1], data[2])
 
-    def write_flash(self, addr, data):
+    def write_flash(self, addr: int, data: bytes | bytearray) -> None:
         self.exchange(SoloBootloader.write, addr, data)
 
-    def get_rng(self, num=0):
+    def get_rng(self, num: int = 0) -> bytes:
         ret = self.send_data_hid(SoloBootloader.CommandRNG, struct.pack("B", num))
         return ret
 
-    def verify_flash(self, sig):
+    def verify_flash(self, sig) -> None:
         """
         Tells device to check signature against application.  If it passes,
         the application will boot.
@@ -185,9 +170,7 @@ class Client(SoloClient):
         """
         self.exchange(SoloBootloader.done, 0, sig)
 
-    def enter_solo_bootloader(
-        self,
-    ):
+    def enter_solo_bootloader(self) -> None:
         """
         If solo is configured as solo hacker or something similar,
         this command will tell the token to boot directly to the bootloader
@@ -197,7 +180,7 @@ class Client(SoloClient):
             self.send_data_hid(CTAPHID.INIT, "\x11\x11\x11\x11\x11\x11\x11\x11")
         self.send_data_hid(SoloBootloader.CommandEnterBoot, "")
 
-    def enter_bootloader_or_die(self):
+    def enter_bootloader_or_die(self) -> None:
         try:
             self.enter_solo_bootloader()
         # except OSError:
@@ -211,9 +194,7 @@ class Client(SoloClient):
             else:
                 raise (e)
 
-    def is_solo_bootloader(
-        self,
-    ):
+    def is_solo_bootloader(self) -> bool:
         try:
             self.bootloader_version()
             return True
@@ -224,9 +205,7 @@ class Client(SoloClient):
                 raise (e)
         return False
 
-    def enter_st_dfu(
-        self,
-    ):
+    def enter_st_dfu(self) -> None:
         """
         If solo is configured as solo hacker or something similar,
         this command will tell the token to boot directly to the st DFU
@@ -240,9 +219,7 @@ class Client(SoloClient):
         else:
             self.send_only_hid(SoloBootloader.CommandEnterSTBoot, "")
 
-    def disable_solo_bootloader(
-        self,
-    ):
+    def disable_solo_bootloader(self) -> bool:
         """
         Disables the Solo bootloader.  Only do this if you want to void the possibility
         of any updates.
@@ -262,18 +239,18 @@ class Client(SoloClient):
         self.exchange(SoloBootloader.reboot)
         return True
 
-    def program_file(self, name):
-        def parseField(f):
+    def program_file(self, name: str) -> bytes:
+        def parseField(f: str) -> bytes:
             return base64.b64decode(helpers.from_websafe(f).encode())
 
-        def isCorrectVersion(current, target):
+        def isCorrectVersion(current: tuple[int, int, int], target: str) -> bool:
             """current is tuple (x,y,z).  target is string '>=x.y.z'.
             Return True if current satisfies the target expression.
             """
             if "=" in target:
-                target = target.split("=")
+                _target = target.split("=")
                 assert target[0] in [">", "<"]
-                target_num = [int(x) for x in target[1].split(".")]
+                target_num = [int(x) for x in _target[1].split(".")]
                 assert len(target_num) == 3
                 comp = target[0] + "="
             else:
@@ -287,7 +264,7 @@ class Client(SoloClient):
             return eval(str(current_num) + comp + str(target_num))
 
         if name.lower().endswith(".json"):
-            data = json.loads(open(name, "r").read())
+            data: dict[str, Any] = json.loads(open(name, "r").read())
             fw = parseField(data["firmware"])
             sig = None
 
@@ -340,8 +317,8 @@ class Client(SoloClient):
             for i in range(seg[0], seg[1], chunk):
                 s = i
                 e = min(i + chunk, seg[1])
-                data = ih.tobinarray(start=i, size=e - s)
-                self.write_flash(i, data)
+                _data = ih.tobinarray(start=i, size=e - s)
+                self.write_flash(i, bytearray(_data))
                 total += chunk
                 progress = total / float(size) * 100
                 sys.stdout.write("updating firmware %.2f%%...\r" % progress)

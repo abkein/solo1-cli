@@ -7,6 +7,8 @@
 # http://opensource.org/licenses/MIT>, at your option. This file may not be
 # copied, modified, or distributed except according to those terms.
 
+from enum import Enum
+
 
 class STM32L4:
     class options:
@@ -39,11 +41,11 @@ class SoloBootloader:
 
 
 class DFU:
-    class type:
+    class type(Enum):
         SEND = 0x21
         RECEIVE = 0xA1
 
-    class bmReq:
+    class bmReq(Enum):
         DETACH = 0x00
         DNLOAD = 0x01
         UPLOAD = 0x02
@@ -52,7 +54,7 @@ class DFU:
         GETSTATE = 0x05
         ABORT = 0x06
 
-    class state:
+    class state(Enum):
         APP_IDLE = 0x00
         APP_DETACH = 0x01
         IDLE = 0x02
@@ -66,6 +68,7 @@ class DFU:
         ERROR = 0x0A
 
     class status:
+        state: 'DFU.state'
         def __init__(self, s):
             self.status = s[0]
             self.timeout = s[1] + (s[2] << 8) + (s[3] << 16)

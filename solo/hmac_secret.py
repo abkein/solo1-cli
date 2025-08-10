@@ -14,47 +14,65 @@ import binascii
 import hashlib
 import secrets
 
+from fido2.webauthn import (
+    AttestationObject,
+    AuthenticatorAttestationResponse,
+    CollectedClientData,
+    PublicKeyCredentialCreationOptions,
+    PublicKeyCredentialRequestOptions,
+    PublicKeyCredentialDescriptor,
+    PublicKeyCredentialRpEntity,
+    PublicKeyCredentialUserEntity,
+    PublicKeyCredentialParameters,
+    PublicKeyCredentialType,
+)
 import solo.client
 
 
 def make_credential(
-    host="solokeys.dev",
-    user_id="they",
-    serial=None,
-    pin=None,
-    prompt="Touch your authenticator to generate a credential...",
-    output=True,
-    udp=False,
-):
-    user_id = user_id.encode()
+    host: str = "solokeys.dev",
+    user_id: str = "they",
+    serial: str | None = None,
+    prompt: str | None = "Touch your authenticator to generate a credential...",
+    output: bool = True,
+    udp: bool = False,
+) -> bytes:
     client = solo.client.find(solo_serial=serial, udp=udp).get_current_fido_client()
+    if client is None:
+        raise RuntimeError("No FIDO client found")
 
-    rp = {"id": host, "name": "Example RP"}
-    client.host = host
-    client.origin = f"https://{client.host}"
-    client.user_id = user_id
-    user = {"id": user_id, "name": "A. User"}
+    # client.user_id = user_id
+    # client.host = host
+    client.origin = f"https://{host}"
+
+    rp = PublicKeyCredentialRpEntity("Example RP", host)
+    user = PublicKeyCredentialUserEntity("A. User", user_id.encode())
     challenge = secrets.token_bytes(32)
 
-    if prompt:
+    if prompt is not None:
         print(prompt)
 
-    attestation_object = client.make_credential(
-        {
-            "rp": rp,
-            "user": user,
-            "challenge": challenge,
-            "pubKeyCredParams": [
-                {"type": "public-key", "alg": -8},
-                {"type": "public-key", "alg": -7},
-            ],
-            "extensions": {"hmacCreateSecret": True},
-        },
-        pin=pin,
-    ).attestation_object
+    PKCT = PublicKeyCredentialType("public-key")
+    pub_key_cred_params = [
+        PublicKeyCredentialParameters(PKCT, -8),
+        PublicKeyCredentialParameters(PKCT, -7)
+    ]
+
+    options = PublicKeyCredentialCreationOptions(
+        rp,
+        user,
+        challenge,
+        pub_key_cred_params,
+    )
+
+    attestation_object = client.make_credential(options).attestation_object
 
     credential = attestation_object.auth_data.credential_data
+    if credential is None:
+        raise RuntimeError("No credential data found")
+
     credential_id = credential.credential_id
+
     if output:
         print(credential_id.hex())
 
@@ -62,28 +80,23 @@ def make_credential(
 
 
 def simple_secret(
-    credential_id,
-    secret_input,
-    host="solokeys.dev",
-    user_id="they",
-    serial=None,
-    pin=None,
-    prompt="Touch your authenticator to generate a response...",
-    output=True,
-    udp=False,
+    credential_id: bytes,
+    secret_input: str,
+    host: str = "solokeys.dev",
+    serial: str | None = None,
+    prompt: str | None = "Touch your authenticator to generate a response...",
+    output: bool = True,
+    udp: bool = False,
 ):
-    user_id = user_id.encode()
-
     client = solo.client.find(solo_serial=serial, udp=udp).get_current_fido_client()
+    if client is None:
+        raise RuntimeError("No FIDO client found")
 
-    # rp = {"id": host, "name": "Example RP"}
-    client.host = host
-    client.origin = f"https://{client.host}"
-    client.user_id = user_id
-    # user = {"id": user_id, "name": "A. User"}
+    # client.host = host
+    client.origin = f"https://{host}"
+    # client.user_id = user_id
+
     credential_id = binascii.a2b_hex(credential_id)
-
-    allow_list = [{"type": "public-key", "id": credential_id}]
 
     challenge = secrets.token_bytes(32)
 
@@ -94,18 +107,19 @@ def simple_secret(
     if prompt:
         print(prompt)
 
-    assertion = client.get_assertion(
-        {
-            "rpId": host,
-            "challenge": challenge,
-            "allowCredentials": allow_list,
-            "extensions": {"hmacGetSecret": {"salt1": salt}},
-        },
-        pin=pin,
-    ).get_response(0)
+    PKCD = PublicKeyCredentialDescriptor(PublicKeyCredentialType("public-key"), credential_id)
 
-    output = assertion.extension_results["hmacGetSecret"]["output1"]
+    PKCRO = PublicKeyCredentialRequestOptions(challenge=challenge, rp_id=host, allow_credentials=[PKCD], extensions={"hmacGetSecret": {"salt1": salt}})
+
+    assertion = client.get_assertion(PKCRO).get_response(0)
+
+    extension_results = assertion.extension_results
+    if extension_results is None:
+        raise RuntimeError("No extension results found")
+
+    output1 = extension_results["hmacGetSecret"]["output1"]
+
     if output:
-        print(output.hex())
+        print(output1.hex())
 
-    return output
+    return output1

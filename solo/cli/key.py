@@ -19,11 +19,11 @@ from cryptography.hazmat.primitives import hashes
 from fido2.client import ClientError as Fido2ClientError
 from fido2.ctap1 import ApduError
 from fido2.ctap2 import CredentialManagement
+from fido2.webauthn import PublicKeyCredentialDescriptor, PublicKeyCredentialType
 
-import solo
-import solo.fido2
-from solo.cli.update import update
 
+from .. import client
+from .. import exceptions
 
 # https://pocoo-click.readthedocs.io/en/latest/commands/#nested-handling-and-contexts
 @click.group()
@@ -53,14 +53,14 @@ def hexbytes(count, serial):
         print(f"Number of bytes must be between 0 and 255, you passed {count}")
         sys.exit(1)
 
-    print(solo.client.find(serial).get_rng(count).hex())
+    print(client.find(serial).get_rng(count).hex())
 
 
 @click.command()
 @click.option("-s", "--serial", help="Serial number of Solo to use")
 def raw(serial):
     """Output raw entropy endlessly."""
-    p = solo.client.find(serial)
+    p = client.find(serial)
     while True:
         r = p.get_rng(255)
         sys.stdout.buffer.write(r)
@@ -80,7 +80,7 @@ def feedkernel(count, serial):
         print(f"Number of bytes must be between 0 and 255, you passed {count}")
         sys.exit(1)
 
-    p = solo.client.find(serial)
+    p = client.find(serial)
 
     import fcntl
     import struct
@@ -134,28 +134,27 @@ def feedkernel(count, serial):
     default="Touch your authenticator to generate a credential...",
     show_default=True,
 )
-def make_credential(serial, host, user, udp, prompt, pin):
+def make_credential(serial, host, user, udp, prompt):
     """Generate a credential.
 
     Pass `--prompt ""` to output only the `credential_id` as hex.
     """
 
-    import solo.hmac_secret
+    from .. import hmac_secret
 
     # check for PIN
-    if not pin:
-        pin = getpass.getpass("PIN (leave empty for no PIN): ")
-    if not pin:
-        pin = None
+    # if not pin:
+    #     pin = getpass.getpass("PIN (leave empty for no PIN): ")
+    # if not pin:
+    #     pin = None
 
-    solo.hmac_secret.make_credential(
+    hmac_secret.make_credential(
         host=host,
         user_id=user,
         serial=serial,
         output=True,
         prompt=prompt,
-        udp=udp,
-        pin=pin,
+        udp=udp
     )
 
 
@@ -175,7 +174,7 @@ def make_credential(serial, host, user, udp, prompt, pin):
 )
 @click.argument("credential-id")
 @click.argument("challenge")
-def challenge_response(serial, host, user, prompt, credential_id, challenge, udp, pin):
+def challenge_response(serial, host, prompt, credential_id, challenge, udp):
     """Uses `hmac-secret` to implement a challenge-response mechanism.
 
     We abuse hmac-secret, which gives us `HMAC(K, hash(challenge))`, where `K`
@@ -190,24 +189,16 @@ def challenge_response(serial, host, user, prompt, credential_id, challenge, udp
     The prompt can be suppressed using `--prompt ""`.
     """
 
-    import solo.hmac_secret
+    from .. import hmac_secret
 
-    # check for PIN
-    if not pin:
-        pin = getpass.getpass("PIN (leave empty for no PIN): ")
-    if not pin:
-        pin = None
-
-    solo.hmac_secret.simple_secret(
+    hmac_secret.simple_secret(
         credential_id,
         challenge,
         host=host,
-        user_id=user,
         serial=serial,
         prompt=prompt,
         output=True,
         udp=udp,
-        pin=pin,
     )
 
 
@@ -231,7 +222,7 @@ def probe(serial, udp, hash_type, filename):
     # so 6kb is conservative
     assert len(data) <= 6 * 1024
 
-    p = solo.client.find(serial, udp=udp)
+    p = client.find(serial, udp=udp)
     import fido2
 
     serialized_command = fido2.cbor.dumps({"subcommand": hash_type, "data": data})
@@ -246,6 +237,7 @@ def probe(serial, udp, hash_type, filename):
         print(f"content from hex: {bytes.fromhex(result_hex[128:])}")
         print(f"signature: {result[:128]}")
         import nacl.signing
+
 
         # verify_key = nacl.signing.VerifyKey(bytes.fromhex("c69995185efa20bf7a88139f5920335aa3d3e7f20464345a2c095c766dfa157a"))
         verify_key = nacl.signing.VerifyKey(
@@ -299,7 +291,7 @@ def reset(serial):
         "Warning: Your credentials will be lost!!! Do you wish to continue?"
     ):
         print("Press the button to confirm -- again, your credentials will be lost!!!")
-        solo.client.find(serial).reset()
+        client.find(serial).reset()
         click.echo("....aaaand they're gone")
 
 
@@ -315,7 +307,7 @@ def change_pin(serial):
         click.echo("New pin are mismatched. Please try again!")
         return
     try:
-        solo.client.find(serial).change_pin(old_pin, new_pin)
+        client.find(serial).change_pin(old_pin, new_pin)
         click.echo("Done. Please use new pin to verify key")
     except Exception as e:
         print(e)
@@ -332,7 +324,7 @@ def set_pin(serial):
         click.echo("New pin are mismatched. Please try again!")
         return
     try:
-        solo.client.find(serial).set_pin(new_pin)
+        client.find(serial).set_pin(new_pin)
         click.echo("Done. Please use new pin to verify key")
     except Exception as e:
         print(e)
@@ -344,23 +336,23 @@ def set_pin(serial):
 @click.option(
     "--udp", is_flag=True, default=False, help="Communicate over UDP with software key"
 )
-def verify(pin, serial, udp):
+def verify(serial, udp):
     """Verify key is valid Solo Secure or Solo Hacker."""
 
-    key = solo.client.find(serial, udp=udp)
+    key = client.find(serial, udp=udp)
 
-    if (
-        key.client
-        and ("clientPin" in key.client.info.options)
-        and key.client.info.options["clientPin"]
-        and not pin
-    ):
-        pin = getpass.getpass("PIN: ")
+    # if (
+    #     key.client
+    #     and ("clientPin" in key.client.info.options)
+    #     and key.client.info.options["clientPin"]
+    #     and not pin
+    # ):
+    #     pin = getpass.getpass("PIN: ")
 
     # Any longer and this needs to go in a submodule
     print("Please press the button on your Solo key")
     try:
-        cert = key.make_credential(pin=pin)
+        cert = key.make_credential()
     except Fido2ClientError as e:
         cause = str(e.cause)
         if "PIN required" in cause:
@@ -441,7 +433,7 @@ def version(serial, udp):
     """Version of firmware on key."""
 
     try:
-        res = solo.client.find(serial, udp=udp).solo_version()
+        res = client.find(serial, udp=udp).solo_version()
         major, minor, patch = res[:3]
         locked = ""
         if len(res) > 3:
@@ -451,10 +443,10 @@ def version(serial, udp):
                 locked = "unlocked"
         print(f"{major}.{minor}.{patch} {locked}")
 
-    except solo.exceptions.NoSoloFoundError:
+    except exceptions.NoSoloFoundError:
         print("No Solo found.")
         print("If you are on Linux, are your udev rules up to date?")
-    except (solo.exceptions.NoSoloFoundError, ApduError):
+    except (exceptions.NoSoloFoundError, ApduError):
         # Older
         print("Firmware is out of date (key does not know the SOLO_VERSION command).")
 
@@ -467,7 +459,7 @@ def version(serial, udp):
 def wink(serial, udp):
     """Send wink command to key (blinks LED a few times)."""
 
-    solo.client.find(serial, udp=udp).wink()
+    client.find(serial, udp=udp).wink()
 
 
 @click.command()
@@ -479,9 +471,9 @@ def wink(serial, udp):
 def ping(serial, udp, ping_data):
     """Send ping command to key"""
 
-    client = solo.client.find(serial, udp=udp)
+    dev = client.find(serial, udp=udp)
     start = time.time()
-    res = client.ping(ping_data)
+    res = dev.ping(ping_data)
     end = time.time()
     duration = int((end - start) * 1000)
     print(f"ping returned: {res}")
@@ -494,7 +486,7 @@ def ping(serial, udp, ping_data):
 def keyboard(serial, sequence):
     """Program the specified key sequence to Solo"""
 
-    dev = solo.client.find(serial)
+    dev = client.find(serial)
     buf = sequence.encode("ascii")
     if len(buf) > 64:
         print("Keyboard sequence cannot exceed 64 bytes")
@@ -507,7 +499,7 @@ def keyboard(serial, sequence):
 def disable_updates(serial):
     """Permanently disable firmware updates on Solo.  Cannot be undone.  Solo must be in bootloader mode."""
 
-    dev = solo.client.find(serial)
+    dev = client.find(serial)
     dev.use_hid()
     if dev.disable_solo_bootloader():
         print(
@@ -529,8 +521,8 @@ def cred_info(pin, serial, udp):
     if not pin:
         pin = getpass.getpass("PIN: ")
 
-    client = solo.client.find(serial, udp=udp)
-    cm = client.cred_mgmt(pin)
+    dev = client.find(serial, udp=udp)
+    cm = dev.cred_mgmt(pin)
     meta = cm.get_metadata()
     existing = meta[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
     remaining = meta[CredentialManagement.RESULT.MAX_REMAINING_COUNT]
@@ -549,8 +541,8 @@ def cred_ls(pin, serial, udp):
     if not pin:
         pin = getpass.getpass("PIN: ")
 
-    client = solo.client.find(serial, udp=udp)
-    cm = client.cred_mgmt(pin)
+    dev = client.find(serial, udp=udp)
+    cm = dev.cred_mgmt(pin)
     meta = cm.get_metadata()
     existing = meta[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
     if existing == 0:
@@ -585,10 +577,12 @@ def cred_rm(pin, credential_id, serial, udp):
     if not pin:
         pin = getpass.getpass("PIN: ")
 
-    client = solo.client.find(serial, udp=udp)
-    cm = client.cred_mgmt(pin)
-    cred = {"id": base64.b64decode(credential_id), "type": "public-key"}
-    cm.delete_cred(cred)
+    dev = client.find(serial, udp=udp)
+    cm = dev.cred_mgmt(pin)
+
+    cm.delete_cred(
+        PublicKeyCredentialDescriptor(PublicKeyCredentialType("public-key"), base64.b64decode(credential_id))
+    )
 
 
 @click.command()
@@ -599,7 +593,7 @@ def cred_rm(pin, credential_id, serial, udp):
 def sign_file(pin, serial, credential_id, filename):
     """Sign the specified file using the given credential-id"""
 
-    dev = solo.client.find(serial)
+    dev = client.find(serial)
     dgst = hashlib.sha256()
     with open(filename, "rb") as f:
         while True:
@@ -609,7 +603,7 @@ def sign_file(pin, serial, credential_id, filename):
             dgst.update(data)
     print("{0}  {1}".format(dgst.hexdigest(), filename))
     print("Please press the button on your Solo key")
-    ret = dev.sign_hash(base64.b64decode(credential_id), dgst.digest(), pin)
+    ret = dev.sign_hash(base64.b64decode(credential_id).decode(), dgst.digest(), pin)
     sig = ret[1]
     sig_file = filename + ".sig"
     print("Saving signature to " + sig_file)
@@ -624,7 +618,7 @@ rng.add_command(feedkernel)
 key.add_command(make_credential)
 key.add_command(challenge_response)
 key.add_command(reset)
-key.add_command(update)
+# key.add_command(update)
 key.add_command(probe)
 key.add_command(change_pin)
 key.add_command(set_pin)

@@ -1,25 +1,16 @@
 [build-system]
-requires = ["flit"]
-build-backend = "flit.buildapi"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.flit.metadata]
-module = "solo"
-dist-name = "solo1"
-author = "SoloKeys"
-author-email = "hello@solokeys.com"
-home-page = "https://github.com/solokeys/solo1-cli"
-requires-python = ">=3.6"
-description-file = "README.md"
-requires = [
-  "click >= 7.1",
-  "cryptography",
-  "ecdsa",
-  "fido2 >= 0.9.1",
-  "intelhex",
-  "pyserial",
-  "pyusb",
-  "requests",
-]
+
+[project]
+name = "solo"
+version = "0.1.1"
+authors = [{ name = "SoloKeys", email = "hello@solokeys.com" }]
+description = "Test package"
+readme = "README.md"
+license = { text = "MIT License" }
+requires-python = ">=3.11"
 classifiers=[
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",
@@ -32,7 +23,22 @@ classifiers=[
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
 ]
+dependencies = [
+  "click >= 7.1",
+  "cryptography",
+  "ecdsa",
+  "fido2 >= 0.9.1",
+  "intelhex",
+  "pyserial",
+  "pyusb",
+  "requests",
+]
 
-[tool.flit.scripts]
+
+[project.scripts]
 solo = "solo.cli:solo_cli"
-solo1 = "solo.cli:solo_cli"
+
+[project.urls]
+"Homepage" = "https://github.com/solokeys/solo1-cli"
+"Bug Tracker" = "https://github.com/solokeys/solo1-cli/issues"
+

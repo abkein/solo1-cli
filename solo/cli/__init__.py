@@ -12,13 +12,17 @@ import json
 import click
 import usb.core
 
-import solo
-import solo.operations
-from solo.cli.key import key
-from solo.cli.monitor import monitor
-from solo.cli.program import program
+# import solo
+# import solo.operations
+# from solo.cli.key import key
+# from solo.cli.monitor import monitor
+# from solo.cli.program import program
 
 from ._checks import init_checks
+from .. import __version__
+from . import key, monitor, program
+from .. import operations
+from .. import client, dfu
 
 init_checks()
 
@@ -28,15 +32,15 @@ def solo_cli():
     pass
 
 
-solo_cli.add_command(key)
-solo_cli.add_command(monitor)
-solo_cli.add_command(program)
+solo_cli.add_command(key.key)
+solo_cli.add_command(monitor.monitor)
+solo_cli.add_command(program.program)
 
 
 @click.command()
 def version():
     """Version of solo1 library and tool."""
-    print(solo.__version__)
+    print(__version__)
 
 
 solo_cli.add_command(version)
@@ -55,7 +59,7 @@ def genkey(input_seed_file, output_pem_file):
     * You may optionally supply a file to seed the RNG for key generating.
     """
 
-    vk = solo.operations.genkey(output_pem_file, input_seed_file=input_seed_file)
+    vk = operations.genkey(output_pem_file, input_seed_file=input_seed_file)
 
     print("Public key in various formats:")
     print()
@@ -77,7 +81,7 @@ solo_cli.add_command(genkey)
 def sign(verifying_key, app_hex, output_json):
     """Signs a firmware hex file, outputs a .json file that can be used for signed update."""
 
-    msg = solo.operations.sign_firmware(verifying_key, app_hex)
+    msg = operations.sign_firmware(verifying_key, app_hex)
     print("Saving signed firmware to", output_json)
     with open(output_json, "wb+") as fh:
         fh.write(json.dumps(msg).encode())
@@ -112,7 +116,7 @@ def mergehex(
     If no attestation key is passed, uses default Solo Hacker one.
     Note that later hex files replace data of earlier ones, if they overlap.
     """
-    solo.operations.mergehex(
+    operations.mergehex(
         input_hex_files,
         output_hex_file,
         attestation_key=attestation_key,
@@ -132,7 +136,7 @@ solo_cli.add_command(mergehex)
 def ls(all):
     """List Solos (in firmware or bootloader mode) and potential Solos in dfu mode."""
 
-    solos = solo.client.find_all()
+    solos = client.find_all()
     print(":: Solos")
     for c in solos:
         descriptor = c.dev.descriptor
@@ -154,7 +158,7 @@ def ls(all):
     if all:
         print(":: Potential Solos in DFU mode")
         try:
-            st_dfus = solo.dfu.find_all()
+            st_dfus = dfu.find_all()
             for d in st_dfus:
                 dev_raw = d.dev
                 dfu_serial = dev_raw.serial_number

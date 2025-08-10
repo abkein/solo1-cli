@@ -15,7 +15,7 @@ from intelhex import IntelHex
 from . import helpers
 
 
-def genkey(output_pem_file, input_seed_file=None):
+def genkey(output_pem_file: str, input_seed_file: str | None = None) -> None:
     from ecdsa import NIST256p, SigningKey
     from ecdsa.util import randrange_from_seed__trytryagain
 
@@ -75,13 +75,13 @@ hacker_attestation_cert = b"".join(
 
 
 def mergehex(
-    input_hex_files,
-    output_hex_file,
-    attestation_key=None,
-    attestation_cert=None,
-    APPLICATION_END_PAGE=20,
-    lock=False,
-):
+    input_hex_files: str,
+    output_hex_file: str,
+    attestation_key: str | None = None,
+    attestation_cert: bytes | None = None,
+    APPLICATION_END_PAGE: int = 20,
+    lock: bool = False,
+) -> None:
     """Merges hex files, and patches in the attestation key.
 
     If no attestation key is passed, uses default Solo Hacker one.
@@ -96,9 +96,7 @@ def mergehex(
 
     if attestation_key is None:
         # generic / hacker attestation key
-        attestation_key = (
-            "1b2626ecc8f69b0f69e34fb236d76466ba12ac16c3ab5750ba064e8b90e02448"
-        )
+        attestation_key = "1b2626ecc8f69b0f69e34fb236d76466ba12ac16c3ab5750ba064e8b90e02448"
 
     if attestation_cert is None:
         attestation_cert = hacker_attestation_cert
@@ -169,25 +167,7 @@ def mergehex(
     first.tofile(output_hex_file, format="hex")
 
 
-def sign_firmware(sk_name, hex_file):
-    v1 = sign_firmware_for_version(sk_name, hex_file, 19)
-    v2 = sign_firmware_for_version(sk_name, hex_file, 20)
-
-    # use fw from v2 since it's smaller.
-    fw = v2["firmware"]
-
-    return {
-        "firmware": fw,
-        "signature": v2["signature"],
-        # signatures to use for different versions of bootloader
-        "versions": {
-            "<=2.5.3": {"signature": v1["signature"]},
-            ">2.5.3": {"signature": v2["signature"]},
-        },
-    }
-
-
-def sign_firmware_for_version(sk_name, hex_file, APPLICATION_END_PAGE):
+def sign_firmware_for_version(sk_name: str, hex_file: str, APPLICATION_END_PAGE) -> dict[str, str]:
     # Maybe this is not the optimal module...
 
     import base64
@@ -199,8 +179,7 @@ def sign_firmware_for_version(sk_name, hex_file, APPLICATION_END_PAGE):
 
     sk = SigningKey.from_pem(open(sk_name).read())
     fw = open(hex_file, "r").read()
-    fw = base64.b64encode(fw.encode())
-    fw = helpers.to_websafe(fw.decode())
+    fw = helpers.to_websafe(base64.b64encode(fw.encode()).decode())
     ih = IntelHex()
     ih.fromfile(hex_file, format="hex")
     # start of firmware and the size of the flash region allocated for it.
@@ -220,7 +199,7 @@ def sign_firmware_for_version(sk_name, hex_file, APPLICATION_END_PAGE):
     print("im_size: ", im_size)
     print("firmware_size: ", len(arr))
 
-    byts = (arr).tobytes() if hasattr(arr, "tobytes") else (arr).tostring()
+    byts = bytes(bytearray(arr))
     h = sha256()
     h.update(byts)
     sig = binascii.unhexlify(h.hexdigest())
@@ -230,8 +209,25 @@ def sign_firmware_for_version(sk_name, hex_file, APPLICATION_END_PAGE):
     print("sig", binascii.hexlify(sig))
 
     sig = base64.b64encode(sig)
-    sig = helpers.to_websafe(sig.decode())
 
     # msg = {'data': read()}
-    msg = {"firmware": fw, "signature": sig}
+    msg = {"firmware": fw, "signature": helpers.to_websafe(sig.decode())}
     return msg
+
+
+def sign_firmware(sk_name: str, hex_file: str):
+    v1 = sign_firmware_for_version(sk_name, hex_file, 19)
+    v2 = sign_firmware_for_version(sk_name, hex_file, 20)
+
+    # use fw from v2 since it's smaller.
+    fw = v2["firmware"]
+
+    return {
+        "firmware": fw,
+        "signature": v2["signature"],
+        # signatures to use for different versions of bootloader
+        "versions": {
+            "<=2.5.3": {"signature": v1["signature"]},
+            ">2.5.3": {"signature": v2["signature"]},
+        },
+    }
